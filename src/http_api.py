@@ -4,7 +4,7 @@ import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from .domain import Actor, DomainError, PermissionDenied, ValidationError
 
@@ -12,6 +12,11 @@ from .domain import Actor, DomainError, PermissionDenied, ValidationError
 RECORD_RE = re.compile(r"^/api/records/(\d+)$")
 ACTION_RE = re.compile(r"^/api/records/(\d+)/actions/([a-z_]+)$")
 AUDIT_RE = re.compile(r"^/api/records/(\d+)/audit$")
+BATCH_RE = re.compile(r"^/api/batches/([^/]+)$")
+BATCH_LEDGER_RE = re.compile(r"^/api/batches/([^/]+)/ledger$")
+BATCH_RECEIPTS_RE = re.compile(r"^/api/batches/([^/]+)/receipts$")
+BATCH_CONFIRM_RE = re.compile(r"^/api/batches/([^/]+)/confirm$")
+BATCH_CLOSE_RE = re.compile(r"^/api/batches/([^/]+)/close$")
 
 
 def make_handler(service: Any, static_dir: Path):
@@ -64,6 +69,7 @@ def make_handler(service: Any, static_dir: Path):
         def do_GET(self) -> None:
             try:
                 parsed = urlparse(self.path)
+                query = parse_qs(parsed.query)
                 if parsed.path == "/health":
                     self._send(200, {"status": "ok", "service": "securities-settlement", "database": service.repository.health()})
                     return
@@ -72,7 +78,6 @@ def make_handler(service: Any, static_dir: Path):
                     self._send(200, page, "text/html; charset=utf-8")
                     return
                 if parsed.path == "/api/records":
-                    query = parse_qs(parsed.query)
                     records = service.list_records(self._actor(), state=query.get("state", [None])[0], limit=int(query.get("limit", ["100"])[0]))
                     self._send(200, {"items": records})
                     return
@@ -86,6 +91,30 @@ def make_handler(service: Any, static_dir: Path):
                     return
                 if parsed.path == "/api/stats":
                     self._send(200, service.stats(self._actor()))
+                    return
+                if parsed.path == "/api/entitlements":
+                    self._send(200, {"items": service.list_entitlements(self._actor())})
+                    return
+                if parsed.path == "/api/batches":
+                    self._send(200, {"items": service.list_batches(self._actor(), state=query.get("state", [None])[0])})
+                    return
+                match = BATCH_RE.match(parsed.path)
+                if match:
+                    self._send(200, service.get_batch(self._actor(), unquote(match.group(1))))
+                    return
+                match = BATCH_LEDGER_RE.match(parsed.path)
+                if match:
+                    self._send(200, {"items": service.ledger(self._actor(), unquote(match.group(1)))})
+                    return
+                match = BATCH_RECEIPTS_RE.match(parsed.path)
+                if match:
+                    self._send(200, {"items": service.list_receipts(self._actor(), unquote(match.group(1)))})
+                    return
+                if parsed.path == "/api/reconciliation":
+                    self._send(200, {"items": service.list_reconciliation(self._actor(), status=query.get("status", [None])[0])})
+                    return
+                if parsed.path == "/api/events":
+                    self._send(200, {"items": service.eod_timeline(self._actor(), query.get("kind", ["batch"])[0], query.get("key", [None])[0])})
                     return
                 self._send(404, {"error": "not_found", "message": "路径不存在"})
             except Exception as exc:
@@ -106,6 +135,32 @@ def make_handler(service: Any, static_dir: Path):
                         raise ValidationError("expected_version必须是整数")
                     record = service.act(self._actor(), int(match.group(1)), version, match.group(2), body.get("data", {}))
                     self._send(200, record)
+                    return
+                if parsed.path == "/api/entitlements":
+                    self._send(201, service.publish_entitlement(self._actor(), body.get("data", {})))
+                    return
+                if parsed.path == "/api/batches":
+                    self._send(201, service.open_batch(self._actor(), body.get("data", {})))
+                    return
+                if parsed.path == "/api/receipts":
+                    self._send(200, service.ingest_receipt(self._actor(), body.get("data", {})))
+                    return
+                match = BATCH_CONFIRM_RE.match(parsed.path)
+                if match:
+                    version = body.get("expected_version")
+                    if not isinstance(version, int):
+                        raise ValidationError("expected_version必须是整数")
+                    self._send(200, service.confirm_settlement(self._actor(), unquote(match.group(1)), version))
+                    return
+                match = BATCH_CLOSE_RE.match(parsed.path)
+                if match:
+                    self._send(200, service.close_batch(self._actor(), unquote(match.group(1))))
+                    return
+                if parsed.path == "/api/eod/run":
+                    self._send(200, service.run_eod(self._actor(), body.get("run_key")))
+                    return
+                if parsed.path == "/api/reconciliation/complete":
+                    self._send(201, service.complete_reconciliation(self._actor(), body.get("data", {})))
                     return
                 self._send(404, {"error": "not_found", "message": "路径不存在"})
             except Exception as exc:

@@ -1,7 +1,7 @@
 """证券结算与企业行动处理领域规则与状态转换。"""
 from typing import Any, Dict, Iterable, Tuple
 
-from .domain import Actor, Conflict, ValidationError, boolean, choice, integer, number, text, text_list
+from .domain import Actor, Conflict, ValidationError, boolean, choice, integer, number, optional_text, text, text_list
 
 
 INITIAL_STATE = "captured"
@@ -36,6 +36,7 @@ class DomainRules:
         integer(p, "settlement_day", 0)
         choice(p, "corporate_action", ["none", "split", "dividend", "merger"])
         number(p, "action_ratio", 0.01)
+        optional_text(p, "batch_key")
         return p
 
     def prepare_create(self, payload: Dict[str, Any]) -> Dict[str, Any]:

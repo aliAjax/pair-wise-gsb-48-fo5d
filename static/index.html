@@ -16,7 +16,10 @@
 <main>
   <h1>证券结算与企业行动处理</h1>
   <p>最小演示页。完整业务流程通过README中的JSON接口调用。</p>
-  <div class="row"><button id="load">加载记录</button><button id="stats">查看状态统计</button></div>
+  <div class="row">
+    <button id="load">加载记录</button><button id="stats">查看状态统计</button>
+    <button id="batches">日终批次</button><button id="entitlements">生效权益</button><button id="recon">待对账</button>
+  </div>
   <pre id="output">点击上方按钮读取服务状态。</pre>
 </main>
 <script>
@@ -28,6 +31,9 @@ async function show(path) {
 }
 document.getElementById("load").onclick = () => show("/api/records?limit=20");
 document.getElementById("stats").onclick = () => show("/api/stats");
+document.getElementById("batches").onclick = () => show("/api/batches");
+document.getElementById("entitlements").onclick = () => show("/api/entitlements");
+document.getElementById("recon").onclick = () => show("/api/reconciliation?status=pending");
 </script>
 </body>
 </html>
